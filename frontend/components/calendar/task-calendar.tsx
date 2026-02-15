@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useRef, useEffect } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from '@tanstack/react-router'
 import { useTasks } from '@/hooks/use-tasks'
@@ -35,7 +35,7 @@ interface TaskCalendarProps {
   className?: string
   projectFilter?: string | null
   tagsFilter?: string[]
-  sidebar?: (gridHeight: number | undefined) => React.ReactNode
+  sidebar?: (isMonthView: boolean) => React.ReactNode
   viewMode: ViewMode
   onViewModeChange: (mode: ViewMode) => void
   onTaskClick?: (task: Task) => void
@@ -51,20 +51,6 @@ export function TaskCalendar({ className, projectFilter, tagsFilter, sidebar, vi
   const [eventModalOpen, setEventModalOpen] = useState(false)
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [dayDialogOpen, setDayDialogOpen] = useState(false)
-  const gridRef = useRef<HTMLDivElement>(null)
-  const [gridHeight, setGridHeight] = useState<number | undefined>(undefined)
-
-  // Measure grid height to constrain sidebar
-  useEffect(() => {
-    if (!gridRef.current) return
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setGridHeight(entry.contentRect.height)
-      }
-    })
-    observer.observe(gridRef.current)
-    return () => observer.disconnect()
-  }, [])
 
   // Build sets of repository IDs and paths that belong to projects
   const { projectRepoIds, projectRepoPaths } = useMemo(() => {
@@ -368,13 +354,15 @@ export function TaskCalendar({ className, projectFilter, tagsFilter, sidebar, vi
               }}
             />
           </div>
-          {sidebar?.(undefined)}
+          {sidebar?.(false)}
         </div>
       ) : (
-        <div className="flex-1 overflow-auto p-4">
-        <div className="flex gap-4">
-        <div className="flex-1">
-          <div ref={gridRef} className="grid grid-cols-7 gap-px rounded-lg border bg-border">
+        <div className="flex-1 overflow-hidden flex gap-4 p-4">
+        <div className="flex-1 min-h-0">
+          <div
+            className="grid grid-cols-7 gap-px rounded-lg border bg-border h-full"
+            style={{ gridTemplateRows: `auto repeat(${calendarDays.length / 7}, minmax(0, 1fr))` }}
+          >
             {/* Weekday headers */}
             {Array.from({ length: 7 }, (_, i) => {
               // Generate Sunday-Saturday localized weekday names
@@ -440,7 +428,7 @@ export function TaskCalendar({ className, projectFilter, tagsFilter, sidebar, vi
                 <div
                   key={index}
                   className={cn(
-                    'min-h-[100px] bg-background p-1',
+                    'bg-background p-1 overflow-hidden',
                     !isCurrentMonth && 'bg-muted/50'
                   )}
                 >
@@ -550,8 +538,7 @@ export function TaskCalendar({ className, projectFilter, tagsFilter, sidebar, vi
             })}
           </div>
         </div>
-        {sidebar?.(gridHeight)}
-        </div>
+        {sidebar?.(true)}
         </div>
       )}
 

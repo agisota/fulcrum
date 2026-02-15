@@ -132,13 +132,12 @@ function CalendarView() {
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           onTaskClick={handleTaskClick}
-          sidebar={(gridHeight) => (
+          sidebar={(isMonthView) => (
             <div
               className={cn(
-                "w-48 lg:w-64 xl:w-80 overflow-hidden",
-                gridHeight ? "sticky top-0 self-start" : "my-4 mr-4"
+                "w-48 lg:w-64 xl:w-80 shrink-0 overflow-hidden",
+                isMonthView ? "self-stretch" : "my-4 mr-4"
               )}
-              style={gridHeight ? { height: gridHeight } : undefined}
             >
               <TaskListSidebar
                 projectFilter={projectFilter ?? null}
