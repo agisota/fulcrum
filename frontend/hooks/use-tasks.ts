@@ -103,7 +103,7 @@ export function useUpdateTask() {
       updates,
     }: {
       taskId: string
-      updates: Partial<Pick<Task, 'title' | 'description' | 'status' | 'viewState' | 'prUrl' | 'tags' | 'dueDate' | 'timeEstimate' | 'priority' | 'repositoryId' | 'agent' | 'aiMode' | 'baseBranch' | 'projectId' | 'recurrenceRule' | 'recurrenceEndDate'>>
+      updates: Partial<Pick<Task, 'title' | 'description' | 'status' | 'viewState' | 'prUrl' | 'tags' | 'dueDate' | 'timeEstimate' | 'priority' | 'repositoryId' | 'agent' | 'aiMode' | 'baseBranch' | 'projectId' | 'recurrenceRule' | 'recurrenceEndDate' | 'pinned'>>
     }) =>
       fetchJSON<Task>(`${API_BASE}/api/tasks/${taskId}`, {
         method: 'PATCH',

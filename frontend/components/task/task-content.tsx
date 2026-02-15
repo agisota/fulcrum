@@ -17,6 +17,8 @@ import {
   Loading03Icon,
   Tick01Icon,
   Folder01Icon,
+  PinIcon,
+  PinOffIcon,
 } from '@hugeicons/core-free-icons'
 import {
   Select,
@@ -286,7 +288,16 @@ export function TaskContent({ task, onDeleted, compact }: TaskContentProps) {
             <Button
               variant="ghost"
               size="icon-sm"
-              className="text-muted-foreground hover:text-destructive"
+              className={`cursor-pointer ${task.pinned ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={() => updateTask.mutate({ taskId: task.id, updates: { pinned: !task.pinned } })}
+              title={task.pinned ? 'Unpin task' : 'Pin task to top'}
+            >
+              <HugeiconsIcon icon={task.pinned ? PinOffIcon : PinIcon} size={compact ? 14 : 16} strokeWidth={2} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="cursor-pointer text-muted-foreground hover:text-destructive"
               onClick={() => setDeleteDialogOpen(true)}
             >
               <HugeiconsIcon icon={Delete02Icon} size={compact ? 14 : 16} strokeWidth={2} />

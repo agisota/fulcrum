@@ -177,7 +177,7 @@ export function TaskCard({ task, isDragPreview, isBlocked, isBlocking, showTypeL
         <button
           type="button"
           className={cn(
-            'absolute right-2 top-2 z-20 p-0.5 rounded transition-opacity duration-150 hover:bg-muted',
+            'absolute right-2 top-2 z-20 p-0.5 rounded transition-opacity duration-150 hover:bg-muted cursor-pointer',
             task.pinned ? 'opacity-100' : 'opacity-0 group-hover/card:opacity-100'
           )}
           onPointerDown={(e) => e.stopPropagation()}
