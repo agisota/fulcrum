@@ -93,7 +93,7 @@ describe('Message Handler', () => {
       expect(observerOpts.ephemeral).toBe(true)
     })
 
-    test('skips observe-only message with empty content', async () => {
+    test('uses subject as content when body is empty', async () => {
       await handleIncomingMessage({
         connectionId,
         channelType: 'email',
@@ -102,7 +102,20 @@ describe('Message Handler', () => {
         metadata: { observeOnly: true, subject: 'Report Domain: example.com' },
       })
 
-      // Should not call any API — empty content is skipped
+      // Should process using subject as content fallback
+      expect(streamMessageCalls.length + opencodeObserverCalls.length).toBeGreaterThan(0)
+    })
+
+    test('skips observe-only message with empty content and no subject', async () => {
+      await handleIncomingMessage({
+        connectionId,
+        channelType: 'email',
+        senderId: 'noreply@google.com',
+        content: '',
+        metadata: { observeOnly: true },
+      })
+
+      // Should not call any API — empty content with no subject is skipped
       expect(streamMessageCalls).toHaveLength(0)
       expect(opencodeObserverCalls).toHaveLength(0)
     })

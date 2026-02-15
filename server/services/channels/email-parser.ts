@@ -85,27 +85,65 @@ export async function parseEmailContent(source: Buffer, connectionId: string): P
         const boundary = boundaryMatch[1]
         const parts = content.split(`--${boundary}`)
 
-        // Find text/plain part
+        // Find text/plain part first, then fall back to text/html
+        let foundPart: { body: string; encoding: string | null } | null = null
+        let htmlPart: { body: string; encoding: string | null } | null = null
+
         for (const part of parts) {
-          if (part.toLowerCase().includes('content-type: text/plain')) {
-            const partContentStart = part.indexOf('\r\n\r\n')
-            if (partContentStart !== -1) {
-              content = part.slice(partContentStart + 4)
-              break
-            }
+          const partLower = part.toLowerCase()
+          const partContentStart = part.indexOf('\r\n\r\n')
+          if (partContentStart === -1) continue
+
+          const partHeaders = part.slice(0, partContentStart).toLowerCase()
+          const partBody = part.slice(partContentStart + 4)
+          const encodingMatch = partHeaders.match(/content-transfer-encoding:\s*(\S+)/)
+          const encoding = encodingMatch?.[1] ?? null
+
+          if (partLower.includes('content-type: text/plain')) {
+            foundPart = { body: partBody, encoding }
+            break
           }
+          if (!htmlPart && partLower.includes('content-type: text/html')) {
+            htmlPart = { body: partBody, encoding }
+          }
+        }
+
+        // Fall back to HTML part if no text/plain
+        if (!foundPart && htmlPart) {
+          foundPart = htmlPart
+        }
+
+        if (foundPart) {
+          content = foundPart.body
+          // Decode the part's transfer encoding
+          if (foundPart.encoding === 'quoted-printable') {
+            content = decodeQuotedPrintable(content)
+          } else if (foundPart.encoding === 'base64') {
+            content = Buffer.from(content.replace(/\s/g, ''), 'base64').toString('utf-8')
+          }
+          // Strip HTML if this was an HTML part
+          if (foundPart === htmlPart) {
+            content = stripHtml(content)
+          }
+          // Skip the global encoding handlers
+          return cleanEmailContent(content).trim() || null
         }
       }
     }
 
-    // Handle quoted-printable encoding
+    // Handle quoted-printable encoding (non-multipart)
     if (raw.toLowerCase().includes('content-transfer-encoding: quoted-printable')) {
       content = decodeQuotedPrintable(content)
     }
 
-    // Handle base64 encoding
+    // Handle base64 encoding (non-multipart)
     if (raw.toLowerCase().includes('content-transfer-encoding: base64')) {
       content = Buffer.from(content.replace(/\s/g, ''), 'base64').toString('utf-8')
+    }
+
+    // Handle non-multipart HTML emails
+    if (contentType.includes('text/html')) {
+      content = stripHtml(content)
     }
 
     // Clean up the content
@@ -128,6 +166,40 @@ export function decodeQuotedPrintable(str: string): string {
   return str
     .replace(/=\r?\n/g, '') // Remove soft line breaks
     .replace(/=([0-9A-F]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+}
+
+/**
+ * Strip HTML tags and convert to readable plain text.
+ */
+export function stripHtml(html: string): string {
+  let text = html
+  // Remove <style> and <script> blocks entirely
+  text = text.replace(/<style[\s\S]*?<\/style>/gi, '')
+  text = text.replace(/<script[\s\S]*?<\/script>/gi, '')
+  // Replace block-level elements with newlines
+  text = text.replace(/<br\s*\/?>/gi, '\n')
+  text = text.replace(/<\/?(p|div|tr|h[1-6]|blockquote|section|article|header|footer)[\s>][^>]*>/gi, '\n')
+  text = text.replace(/<li[\s>][^>]*>/gi, '\n- ')
+  text = text.replace(/<\/li>/gi, '')
+  // Strip all remaining tags
+  text = text.replace(/<[^>]+>/g, '')
+  // Decode common HTML entities
+  text = text
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+  // Normalize whitespace
+  text = text
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  return text
 }
 
 /**

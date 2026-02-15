@@ -526,15 +526,25 @@ async function processObserveOnlyMessage(msg: IncomingMessage): Promise<void> {
     return
   }
 
-  // Skip empty content — nothing to observe, and empty messages cause API 400 errors
+  // If content is empty but subject exists, use subject as content (HTML-only emails may fail extraction)
   if (!msg.content.trim()) {
-    log.messaging.info('Skipping observe-only message with empty content', {
-      connectionId: msg.connectionId,
-      channelType: msg.channelType,
-      senderId: msg.senderId,
-      subject: msg.metadata?.subject as string | undefined,
-    })
-    return
+    const subject = msg.metadata?.subject as string | undefined
+    if (subject) {
+      log.messaging.info('Using subject as content for empty-body email', {
+        connectionId: msg.connectionId,
+        channelType: msg.channelType,
+        senderId: msg.senderId,
+        subject,
+      })
+      msg = { ...msg, content: `[Email subject: ${subject}]` }
+    } else {
+      log.messaging.info('Skipping observe-only message with empty content', {
+        connectionId: msg.connectionId,
+        channelType: msg.channelType,
+        senderId: msg.senderId,
+      })
+      return
+    }
   }
 
   // Fetch recent channel messages for context (skip email — too noisy/threaded)

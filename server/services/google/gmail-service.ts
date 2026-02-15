@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm'
 import { db, googleAccounts, gmailDrafts } from '../../db'
 import { getAuthenticatedClient } from '../google-oauth'
 import { createLogger } from '../../lib/logger'
+import { stripHtml } from '../channels/email-parser'
 
 const logger = createLogger('Google:Gmail')
 
@@ -77,6 +78,22 @@ function base64urlEncode(str: string): string {
 }
 
 /**
+ * Recursively search MIME parts for a specific content type.
+ */
+function findMimePart(
+  parts: gmail_v1.Schema$MessagePart[] | undefined,
+  mimeType: string
+): gmail_v1.Schema$MessagePart | undefined {
+  if (!parts) return undefined
+  for (const part of parts) {
+    if (part.mimeType === mimeType && part.body?.data) return part
+    const nested = findMimePart(part.parts, mimeType)
+    if (nested) return nested
+  }
+  return undefined
+}
+
+/**
  * Parse a Gmail message into a simplified format.
  */
 function parseGmailMessage(msg: gmail_v1.Schema$Message): {
@@ -97,17 +114,27 @@ function parseGmailMessage(msg: gmail_v1.Schema$Message): {
   const getHeader = (name: string) =>
     headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? null
 
-  // Extract body
+  // Extract body: try text/plain, fall back to text/html, then snippet
   let body: string | null = null
   if (msg.payload?.body?.data) {
     body = Buffer.from(msg.payload.body.data, 'base64url').toString('utf-8')
+    if (msg.payload.mimeType === 'text/html') {
+      body = stripHtml(body)
+    }
   } else if (msg.payload?.parts) {
-    const textPart = msg.payload.parts.find(
-      (p) => p.mimeType === 'text/plain' && p.body?.data
-    )
+    const textPart = findMimePart(msg.payload.parts, 'text/plain')
     if (textPart?.body?.data) {
       body = Buffer.from(textPart.body.data, 'base64url').toString('utf-8')
+    } else {
+      const htmlPart = findMimePart(msg.payload.parts, 'text/html')
+      if (htmlPart?.body?.data) {
+        body = stripHtml(Buffer.from(htmlPart.body.data, 'base64url').toString('utf-8'))
+      }
     }
+  }
+  // Last resort: use snippet
+  if (!body && msg.snippet) {
+    body = msg.snippet
   }
 
   return {

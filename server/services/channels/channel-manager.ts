@@ -128,6 +128,10 @@ export function getActiveEmailChannel(): EmailChannel | null {
   return _activeEmailChannel
 }
 
+export function getActiveGmailBackend(): GmailBackend | null {
+  return _activeGmailBackend
+}
+
 // Message handler - will be set by message-handler.ts to avoid circular imports
 let messageHandler: ((msg: IncomingMessage) => Promise<void>) | null = null
 
