@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
+import * as os from 'os'
 import * as fs from 'fs'
 import * as path from 'path'
 import { db, tasks } from '../db'
@@ -7,6 +8,32 @@ import { eq } from 'drizzle-orm'
 import { getWorktreeBasePath } from '../lib/settings'
 import { getPTYManager, destroyTerminalAndBroadcast } from '../terminal/pty-instance'
 import type { WorktreeBasic, WorktreeDetails, WorktreesSummary } from '../../shared/types'
+
+// --- Size cache with 5-minute TTL ---
+interface SizeCacheEntry {
+  size: number
+  computedAt: number
+}
+
+const sizeCache = new Map<string, SizeCacheEntry>()
+const SIZE_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
+async function getCachedSize(dirPath: string): Promise<number> {
+  const entry = sizeCache.get(dirPath)
+  if (entry && Date.now() - entry.computedAt < SIZE_CACHE_TTL) {
+    return entry.size
+  }
+  const size = await getDirectorySizeAsync(dirPath)
+  sizeCache.set(dirPath, { size, computedAt: Date.now() })
+  return size
+}
+
+function invalidateSizeCache(dirPath: string): void {
+  sizeCache.delete(dirPath)
+}
+
+// Dynamic concurrency: I/O-bound du can exceed CPU count, clamped to [4, 16]
+const CONCURRENCY = Math.min(16, Math.max(4, os.availableParallelism?.() ?? os.cpus().length))
 
 // Format bytes to human-readable string
 function formatBytes(bytes: number): string {
@@ -181,12 +208,11 @@ app.get('/', (c) => {
 
     // Process details in parallel with concurrency limit
     let totalSize = 0
-    const CONCURRENCY = 4
 
     async function processWorktree(fullPath: string) {
       try {
         const [size, branch] = await Promise.all([
-          getDirectorySizeAsync(fullPath),
+          getCachedSize(fullPath),
           getGitBranchAsync(fullPath),
         ])
         totalSize += size
@@ -258,40 +284,51 @@ app.get('/json', async (c) => {
 
   // Read all directories in worktreeBasePath
   const entries = fs.readdirSync(worktreeBasePath, { withFileTypes: true })
-  const worktrees: (WorktreeBasic & Partial<WorktreeDetails>)[] = []
 
+  // Collect basic info synchronously
+  const basicEntries: { fullPath: string; name: string; mtime: string; linkedTask: (typeof allTasks)[0] | undefined }[] = []
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
 
     const fullPath = path.join(worktreeBasePath, entry.name)
-
-    // Check if it's a git worktree (has .git file or directory)
     const gitPath = path.join(fullPath, '.git')
     if (!fs.existsSync(gitPath)) continue
 
     const stats = fs.statSync(fullPath)
-    const linkedTask = worktreeToTask.get(fullPath)
-
-    // Get size and branch in parallel
-    const [size, branch] = await Promise.all([
-      getDirectorySizeAsync(fullPath),
-      getGitBranchAsync(fullPath),
-    ])
-
-    worktrees.push({
-      path: fullPath,
+    basicEntries.push({
+      fullPath,
       name: entry.name,
-      lastModified: stats.mtime.toISOString(),
-      isOrphaned: !linkedTask,
-      taskId: linkedTask?.id,
-      taskTitle: linkedTask?.title,
-      taskStatus: linkedTask?.status,
-      repoPath: linkedTask?.repoPath,
-      pinned: linkedTask?.pinned ?? false,
-      size,
-      sizeFormatted: formatBytes(size),
-      branch,
+      mtime: stats.mtime.toISOString(),
+      linkedTask: worktreeToTask.get(fullPath),
     })
+  }
+
+  // Fetch sizes and branches in parallel with concurrency limit
+  const worktrees: (WorktreeBasic & Partial<WorktreeDetails>)[] = []
+  for (let i = 0; i < basicEntries.length; i += CONCURRENCY) {
+    const batch = basicEntries.slice(i, i + CONCURRENCY)
+    const results = await Promise.all(
+      batch.map(async (e) => {
+        const [size, branch] = await Promise.all([getCachedSize(e.fullPath), getGitBranchAsync(e.fullPath)])
+        return { ...e, size, branch }
+      }),
+    )
+    for (const r of results) {
+      worktrees.push({
+        path: r.fullPath,
+        name: r.name,
+        lastModified: r.mtime,
+        isOrphaned: !r.linkedTask,
+        taskId: r.linkedTask?.id,
+        taskTitle: r.linkedTask?.title,
+        taskStatus: r.linkedTask?.status,
+        repoPath: r.linkedTask?.repoPath,
+        pinned: r.linkedTask?.pinned ?? false,
+        size: r.size,
+        sizeFormatted: formatBytes(r.size),
+        branch: r.branch,
+      })
+    }
   }
 
   // Sort: orphaned first, then by last modified (newest first)
@@ -356,6 +393,7 @@ app.delete('/', async (c) => {
 
     // Delete the worktree
     await deleteWorktree(body.worktreePath, body.repoPath || linkedTask?.repoPath)
+    invalidateSizeCache(body.worktreePath)
 
     // Handle linked task based on deleteLinkedTask flag
     let deletedTaskId: string | undefined
