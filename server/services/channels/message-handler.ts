@@ -22,6 +22,8 @@ import type { ObserverActionRecord } from '../../db/schema'
 import { db, tasks } from '../../db'
 import { desc } from 'drizzle-orm'
 import type { IncomingMessage } from './types'
+import { parseSlackResponse } from './slack-utils'
+import type { SlackChannel } from './slack-channel'
 
 // Internal deps - exposed for test replacement (avoids unreliable mock.module)
 export const _deps = {
@@ -190,7 +192,47 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       ...(channelHistory.length > 0 && { channelHistory }),
     })
 
-    // Capture the assistant's response to send it directly
+    // For Slack: try streaming the response incrementally via chat.postMessage + chat.update
+    if (isSlack) {
+      const slackChannel = activeChannels.get(msg.connectionId) as SlackChannel | undefined
+      if (slackChannel && typeof slackChannel.streamResponse === 'function') {
+        const result = await slackChannel.streamResponse(msg.senderId, stream)
+
+        // Mark channel history as synced
+        if (channelHistory.length > 0) {
+          assistantService.updateLastChannelSyncAt(session.id)
+        }
+
+        if (result.streamed) {
+          // Streaming handled everything (including Block Kit final update)
+          return
+        }
+
+        // Streaming fell back — send the full text via normal sendMessage
+        const responseText = result.fullText
+        if (responseText.trim()) {
+          const parsed = parseSlackResponse(responseText)
+          if (parsed) {
+            const meta: Record<string, unknown> = {}
+            if (parsed.blocks) meta.blocks = parsed.blocks
+            if (parsed.filePath) meta.filePath = parsed.filePath
+            await sendResponse(
+              msg,
+              parsed.body,
+              Object.keys(meta).length > 0 ? meta : undefined
+            )
+          } else {
+            await sendResponse(msg, responseText, {
+              blocks: [{ type: 'section', text: { type: 'mrkdwn', text: responseText } }],
+            })
+          }
+        }
+        return
+      }
+      // If we can't get the SlackChannel instance, fall through to non-streaming path
+    }
+
+    // Non-Slack channels (or Slack fallback): collect full response then send
     let responseText = ''
     let hasError = false
 
@@ -223,20 +265,20 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       assistantService.updateLastChannelSyncAt(session.id)
     }
 
-    // Send the response directly (no reliance on the assistant calling a tool)
+    // Send the response
     if (isSlack && responseText.trim()) {
+      // Slack fallback (no streaming available) — still apply Block Kit formatting
       const parsed = parseSlackResponse(responseText)
       if (parsed) {
-        const metadata: Record<string, unknown> = {}
-        if (parsed.blocks) metadata.blocks = parsed.blocks
-        if (parsed.filePath) metadata.filePath = parsed.filePath
+        const meta: Record<string, unknown> = {}
+        if (parsed.blocks) meta.blocks = parsed.blocks
+        if (parsed.filePath) meta.filePath = parsed.filePath
         await sendResponse(
           msg,
           parsed.body,
-          Object.keys(metadata).length > 0 ? metadata : undefined
+          Object.keys(meta).length > 0 ? meta : undefined
         )
       } else {
-        // No XML tags or parse failure — wrap raw text in a section block
         await sendResponse(msg, responseText, {
           blocks: [{ type: 'section', text: { type: 'mrkdwn', text: responseText } }],
         })
@@ -400,28 +442,8 @@ Last active: ${new Date(mapping.lastMessageAt).toLocaleString()}`
   await sendResponse(msg, statusText)
 }
 
-/**
- * Parse <slack-response> XML tags from assistant text output.
- * Returns { body, blocks? } on success, null on failure or missing tags.
- */
-export function parseSlackResponse(text: string): { body: string; blocks?: unknown[]; filePath?: string } | null {
-  const match = text.match(/<slack-response>([\s\S]*?)<\/slack-response>/)
-  if (!match) return null
-
-  try {
-    const parsed = JSON.parse(match[1])
-    if (typeof parsed.body === 'string' && parsed.body.trim()) {
-      return {
-        body: parsed.body,
-        ...(Array.isArray(parsed.blocks) && { blocks: parsed.blocks }),
-        ...(typeof parsed.filePath === 'string' && parsed.filePath.trim() && { filePath: parsed.filePath }),
-      }
-    }
-    return null
-  } catch {
-    return null
-  }
-}
+// Re-export for backward compatibility (tests import from here)
+export { parseSlackResponse }
 
 /**
  * Send a response back through the appropriate channel.

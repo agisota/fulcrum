@@ -18,6 +18,7 @@ import type {
   ConnectionStatus,
   IncomingMessage,
 } from './types'
+import { parseSlackResponse } from './slack-utils'
 
 /** Shape of a Slack file object attached to a message */
 interface SlackFile {
@@ -516,6 +517,204 @@ export class SlackChannel implements MessagingChannel {
         response_type: 'ephemeral',
       })
     }
+  }
+
+  /**
+   * Stream an AI response into Slack by posting on the first delta,
+   * throttling chat.update calls, and doing a final Block Kit update.
+   *
+   * Returns { streamed: true } on success, or { streamed: false, fullText }
+   * to signal the caller should fall back to normal sendMessage.
+   */
+  async streamResponse(
+    recipientId: string,
+    stream: AsyncIterable<{ type: string; data: unknown }>,
+  ): Promise<{ streamed: boolean; fullText: string; filePath?: string }> {
+    if (!this.app || this.status !== 'connected') {
+      // Collect full text so caller can fall back
+      let fullText = ''
+      for await (const event of stream) {
+        if (event.type === 'content:delta') {
+          fullText += (event.data as { text: string }).text
+        } else if (event.type === 'message:complete') {
+          fullText = (event.data as { content: string }).content
+        }
+      }
+      return { streamed: false, fullText }
+    }
+
+    // Open DM channel once
+    let channelId: string
+    try {
+      const conversation = await this.app.client.conversations.open({ users: recipientId })
+      channelId = conversation.channel?.id ?? ''
+      if (!channelId) throw new Error('No channel ID returned')
+    } catch (err) {
+      log.messaging.error('Failed to open Slack DM for streaming', {
+        connectionId: this.connectionId, to: recipientId, error: String(err),
+      })
+      // Drain stream
+      let fullText = ''
+      for await (const event of stream) {
+        if (event.type === 'content:delta') {
+          fullText += (event.data as { text: string }).text
+        } else if (event.type === 'message:complete') {
+          fullText = (event.data as { content: string }).content
+        }
+      }
+      return { streamed: false, fullText }
+    }
+
+    let messageTs: string | undefined  // Slack message timestamp (acts as message ID)
+    let accumulatedText = ''
+    let lastUpdateAt = 0
+    let updateFailed = false
+    const UPDATE_INTERVAL_MS = 1500
+    const MAX_STREAMING_LENGTH = 4000
+
+    for await (const event of stream) {
+      if (event.type === 'content:delta') {
+        const delta = (event.data as { text: string }).text
+        accumulatedText += delta
+
+        // If accumulated text exceeds limit, stop updating and let caller split-send
+        if (accumulatedText.length > MAX_STREAMING_LENGTH) {
+          continue  // Keep draining to get message:complete
+        }
+
+        if (!messageTs && !updateFailed) {
+          // Post initial message on first delta
+          try {
+            const result = await this.app!.client.chat.postMessage({
+              channel: channelId,
+              text: accumulatedText + ' :writing_hand:',
+              mrkdwn: true,
+            })
+            messageTs = result.ts
+            lastUpdateAt = Date.now()
+          } catch (err) {
+            log.messaging.warn('Failed to post initial streaming message', {
+              connectionId: this.connectionId, error: String(err),
+            })
+            updateFailed = true
+          }
+        } else if (messageTs && !updateFailed) {
+          // Throttled update
+          const now = Date.now()
+          if (now - lastUpdateAt >= UPDATE_INTERVAL_MS) {
+            try {
+              await this.app!.client.chat.update({
+                channel: channelId,
+                ts: messageTs,
+                text: accumulatedText + ' :writing_hand:',
+                mrkdwn: true,
+              })
+              lastUpdateAt = now
+            } catch (err) {
+              log.messaging.warn('Failed to update streaming message', {
+                connectionId: this.connectionId, error: String(err),
+              })
+              updateFailed = true
+            }
+          }
+        }
+      } else if (event.type === 'error') {
+        const errorMsg = (event.data as { message: string }).message
+        log.messaging.error('Assistant error during streaming', { error: errorMsg })
+      } else if (event.type === 'message:complete') {
+        const text = (event.data as { content: string }).content
+        // Don't overwrite good response with API error
+        if (!text.startsWith('API Error:') && !text.startsWith('Error:')) {
+          accumulatedText = text
+        }
+      }
+    }
+
+    // If response is too long, delete the streaming message and fall back
+    if (accumulatedText.length > MAX_STREAMING_LENGTH && messageTs) {
+      try {
+        await this.app!.client.chat.delete({ channel: channelId, ts: messageTs })
+      } catch {
+        // Best effort — the message will just stay as a partial preview
+      }
+      return { streamed: false, fullText: accumulatedText }
+    }
+
+    if (!accumulatedText.trim()) {
+      // No content — clean up partial message if any
+      if (messageTs) {
+        try {
+          await this.app!.client.chat.update({
+            channel: channelId,
+            ts: messageTs,
+            text: "Sorry, I ran into an issue processing that. Could you try again?",
+            mrkdwn: true,
+          })
+        } catch { /* best effort */ }
+      }
+      return { streamed: true, fullText: '' }
+    }
+
+    // Final update with Block Kit formatting
+    const parsed = parseSlackResponse(accumulatedText)
+    let filePath: string | undefined
+
+    if (messageTs) {
+      try {
+        if (parsed) {
+          filePath = parsed.filePath
+          await this.app!.client.chat.update({
+            channel: channelId,
+            ts: messageTs,
+            text: parsed.body,
+            ...(parsed.blocks && { blocks: parsed.blocks as KnownBlock[] }),
+          })
+        } else {
+          // No XML tags — wrap in a section block
+          await this.app!.client.chat.update({
+            channel: channelId,
+            ts: messageTs,
+            text: accumulatedText,
+            blocks: [{ type: 'section', text: { type: 'mrkdwn', text: accumulatedText } }],
+          })
+        }
+      } catch (err) {
+        log.messaging.warn('Failed final streaming update', {
+          connectionId: this.connectionId, error: String(err),
+        })
+        // Message stays as last partial update — acceptable degradation
+      }
+    } else if (!updateFailed) {
+      // Stream completed before we posted anything (very fast response)
+      // Fall back to normal send
+      return { streamed: false, fullText: accumulatedText, filePath: parsed?.filePath }
+    }
+
+    // Upload file if specified
+    if (filePath && messageTs) {
+      try {
+        const fileData = readFileSync(filePath)
+        const filename = basename(filePath)
+        await this.app!.client.files.uploadV2({
+          channel_id: channelId,
+          file: fileData,
+          filename,
+        })
+      } catch (err) {
+        log.messaging.warn('Failed to upload file after streaming', {
+          connectionId: this.connectionId, filePath, error: String(err),
+        })
+      }
+    }
+
+    log.messaging.info('Slack streaming response complete', {
+      connectionId: this.connectionId,
+      to: recipientId,
+      length: accumulatedText.length,
+      hadBlocks: !!parsed?.blocks,
+    })
+
+    return { streamed: true, fullText: accumulatedText, filePath }
   }
 
   async shutdown(): Promise<void> {
