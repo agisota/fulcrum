@@ -314,7 +314,12 @@ function fnoxExportJson(): Record<string, string> {
       stdio: ['pipe', 'pipe', 'ignore'],
     }).trim()
     if (!result) return {}
-    return JSON.parse(result) as Record<string, string>
+    const parsed = JSON.parse(result)
+    // fnox v1.12+ wraps values under a "secrets" key with separate "metadata"
+    if (parsed.secrets && typeof parsed.secrets === 'object') {
+      return parsed.secrets as Record<string, string>
+    }
+    return parsed as Record<string, string>
   } catch {
     return {}
   }
