@@ -383,7 +383,7 @@ function WeekEventBlock({ event, position, calendarColor, onClick }: WeekEventBl
   return (
     <button
       onClick={onClick}
-      className="absolute overflow-hidden rounded text-left transition-opacity hover:opacity-80 cursor-pointer bg-muted/80 border border-border/50 backdrop-blur-sm"
+      className="absolute z-10 overflow-hidden rounded text-left transition-opacity hover:opacity-80 cursor-pointer bg-muted/80 border border-border/50 backdrop-blur-sm"
       style={{
         top: position.top,
         height: position.height,
