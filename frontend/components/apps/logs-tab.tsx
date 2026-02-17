@@ -115,7 +115,7 @@ export function LogsTab({ appId, services }: LogsTabProps) {
         </div>
       </div>
 
-      <div className="rounded-lg border bg-muted/30 p-2 overflow-auto max-h-[600px] min-h-[300px] custom-logs-scrollbar">
+      <div className="rounded-lg border bg-muted/80 p-2 overflow-auto max-h-[600px] min-h-[300px] custom-logs-scrollbar">
         {isLoading ? (
           <div className="flex items-center gap-2 text-muted-foreground p-2">
             <HugeiconsIcon icon={Loading03Icon} size={14} strokeWidth={2} className="animate-spin" />
