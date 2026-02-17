@@ -3,6 +3,7 @@ import { execSync } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { triggerAutoDeployForRepo } from '../services/git-watcher'
 
 // Execute git command and return output
 function gitExec(cwd: string, args: string, timeoutMs = 30_000): string {
@@ -736,6 +737,9 @@ app.post('/merge-to-main', async (c) => {
       }
 
       restoreOriginalBranch(repoPath, originalBranch, defaultBranch)
+
+      // Fire-and-forget: trigger auto-deploy for apps watching this repo+branch
+      triggerAutoDeployForRepo(repoPath, defaultBranch).catch(() => {})
 
       return c.json({
         success: true,

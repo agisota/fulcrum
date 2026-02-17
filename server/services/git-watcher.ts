@@ -1,6 +1,6 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { apps, repositories } from '../db/schema'
 import { deployApp } from './deployment'
@@ -283,6 +283,61 @@ export async function refreshGitWatchers(): Promise<void> {
     watchedRepos: watchedRepos.size,
     autoDeployApps: autoDeployApps.length,
   })
+}
+
+/**
+ * Explicitly trigger auto-deploy for a repository + branch.
+ * Called after merge-to-main so we don't rely solely on fs.watch.
+ */
+export async function triggerAutoDeployForRepo(repoPath: string, branch: string): Promise<void> {
+  const repo = await db.query.repositories.findFirst({
+    where: eq(repositories.path, repoPath),
+  })
+  if (!repo) return
+
+  const matchingApps = await db.query.apps.findMany({
+    where: and(
+      eq(apps.repositoryId, repo.id),
+      eq(apps.branch, branch),
+      eq(apps.autoDeployEnabled, true),
+    ),
+  })
+
+  if (matchingApps.length === 0) return
+
+  const currentCommit = getCurrentCommit(repoPath, branch)
+
+  // Update watcher state so the fs.watch debounce doesn't double-trigger
+  const watched = watchedRepos.get(repoPath)
+  if (watched && currentCommit) {
+    watched.lastCommit = currentCommit
+  }
+
+  for (const app of matchingApps) {
+    if (deployingApps.has(app.id)) {
+      log.deploy.info('Skipping explicit auto-deploy - already in progress', { appId: app.id })
+      continue
+    }
+
+    log.deploy.info('Triggering auto-deploy after merge', {
+      appId: app.id,
+      appName: app.name,
+      branch,
+      commit: currentCommit?.slice(0, 7),
+    })
+
+    deployingApps.add(app.id)
+    deployApp(app.id, { deployedBy: 'auto' })
+      .catch((err) => {
+        log.deploy.error('Auto-deploy after merge failed', {
+          appId: app.id,
+          error: String(err),
+        })
+      })
+      .finally(() => {
+        deployingApps.delete(app.id)
+      })
+  }
 }
 
 /**
