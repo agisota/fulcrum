@@ -180,11 +180,17 @@ export function InitializeWorktreeTaskModal({ task, open, onOpenChange }: Initia
   // Set default base branch when branches are loaded
   useEffect(() => {
     if (branchData) {
-      setBaseBranch(branchData.defaultBranch || branchData.branches[0] || 'main')
+      const repo = repositories?.find(r => r.id === selectedRepoId)
+      const preferred = repo?.lastBaseBranch
+      const allBranches = [...branchData.branches, ...(branchData.remoteBranches ?? [])]
+      const branch = preferred && allBranches.includes(preferred)
+        ? preferred
+        : branchData.defaultBranch || branchData.branches[0] || 'main'
+      setBaseBranch(branch)
     } else {
       setBaseBranch('')
     }
-  }, [branchData, repoPath])
+  }, [branchData, repoPath, repositories, selectedRepoId])
 
   const handleRepoSelect = async (path: string) => {
     setRepoError(null)

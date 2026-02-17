@@ -292,7 +292,8 @@ export function CreateTaskModal({ open: controlledOpen, onOpenChange, defaultRep
     if (branchData) {
       const repo = repositories?.find(r => r.id === selectedRepoId)
       const preferred = repo?.lastBaseBranch
-      const branch = preferred && branchData.branches.includes(preferred)
+      const allBranches = [...branchData.branches, ...(branchData.remoteBranches ?? [])]
+      const branch = preferred && allBranches.includes(preferred)
         ? preferred
         : branchData.defaultBranch || branchData.branches[0] || 'main'
       setBaseBranch(branch)
