@@ -319,7 +319,7 @@ export function useAssistantModel() {
 
   return {
     ...query,
-    data: (query.data?.value as AssistantModel) ?? 'sonnet',
+    data: query.data ? ((query.data.value as AssistantModel) ?? 'sonnet') : undefined,
     isDefault: query.data?.isDefault ?? true,
   }
 }
