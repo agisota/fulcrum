@@ -39,10 +39,6 @@ const PLUGIN_FILES: Array<{ path: string; content: string }> = [
   { path: 'skills/fulcrum/SKILL.md', content: SKILL_FULCRUM },
 ]
 
-// Legacy paths for cleanup
-const LEGACY_PLUGIN_DIR = join(homedir(), '.claude', 'plugins', 'fulcrum')
-const LEGACY_CACHE_DIR = join(homedir(), '.claude', 'plugins', 'cache', 'fulcrum')
-
 function runClaude(args: string[]): { success: boolean; output: string } {
   const result = spawnSync('claude', args, { encoding: 'utf-8' })
   return {
@@ -138,9 +134,6 @@ export async function installClaudePlugin(options: { silent?: boolean } = {}) {
     }
     log('✓ Installed plugin')
 
-    // 4. Clean up legacy paths
-    cleanupLegacyPaths(log)
-
     log('')
     log('Installation complete! Restart Claude Code to apply changes.')
   } catch (err) {
@@ -168,9 +161,6 @@ async function uninstallClaudePlugin() {
       console.log('✓ Removed plugin files from ' + MARKETPLACE_DIR)
     }
 
-    // 4. Clean up legacy paths
-    cleanupLegacyPaths(console.log)
-
     console.log('')
     console.log('Uninstall complete! Restart Claude Code to apply changes.')
   } catch (err) {
@@ -179,17 +169,6 @@ async function uninstallClaudePlugin() {
       `Failed to uninstall Claude plugin: ${err instanceof Error ? err.message : String(err)}`,
       ExitCodes.ERROR
     )
-  }
-}
-
-function cleanupLegacyPaths(log: (msg: string) => void): void {
-  const legacyPaths = [LEGACY_PLUGIN_DIR, LEGACY_CACHE_DIR]
-
-  for (const path of legacyPaths) {
-    if (existsSync(path)) {
-      rmSync(path, { recursive: true })
-      log('✓ Removed legacy files from ' + path)
-    }
   }
 }
 
