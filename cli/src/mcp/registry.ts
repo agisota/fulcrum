@@ -345,6 +345,29 @@ export const toolRegistry: ToolMetadata[] = [
     defer_loading: true,
   },
 
+  // Copier template tools
+  {
+    name: 'list_templates',
+    description: 'List available Copier project templates',
+    category: 'repositories',
+    keywords: ['template', 'copier', 'scaffold', 'boilerplate', 'list'],
+    defer_loading: true,
+  },
+  {
+    name: 'get_template_questions',
+    description: 'Get questions/prompts defined by a Copier template',
+    category: 'repositories',
+    keywords: ['template', 'copier', 'questions', 'prompts', 'answers', 'scaffold'],
+    defer_loading: true,
+  },
+  {
+    name: 'create_from_template',
+    description: 'Create a new project from a Copier template',
+    category: 'repositories',
+    keywords: ['template', 'copier', 'create', 'scaffold', 'project', 'boilerplate', 'generate'],
+    defer_loading: true,
+  },
+
   // Additional core tools
   {
     name: 'list_exec_sessions',

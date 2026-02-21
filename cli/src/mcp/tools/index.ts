@@ -9,6 +9,7 @@ import type { FulcrumClient } from '../../client'
 import { registerCoreTools } from './core'
 import { registerTaskTools } from './tasks'
 import { registerRepositoryTools } from './repositories'
+import { registerCopierTools } from './copier'
 import { registerNotificationTools } from './notifications'
 import { registerExecTools } from './exec'
 import { registerProjectTools } from './projects'
@@ -30,6 +31,7 @@ export function registerTools(server: McpServer, client: FulcrumClient) {
   registerCoreTools(server, client)
   registerTaskTools(server, client)
   registerRepositoryTools(server, client)
+  registerCopierTools(server, client)
   registerNotificationTools(server, client)
   registerExecTools(server, client)
   registerProjectTools(server, client)

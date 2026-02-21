@@ -34,6 +34,9 @@ import type {
   UpdateTimerRequest,
   JobLogEntry,
   JobScope,
+  CopierQuestionsResponse,
+  CreateProjectRequest,
+  CreateProjectResponse,
 } from '@shared/types'
 
 export interface CreateTaskInput {
@@ -1504,6 +1507,23 @@ export class FulcrumClient {
     if (scope) params.set('scope', scope)
     const query = params.toString() ? `?${params.toString()}` : ''
     return this.fetch(`/api/jobs/${encodeURIComponent(name)}/run${query}`, { method: 'POST' })
+  }
+
+  // Copier Templates
+  async listTemplates(): Promise<Repository[]> {
+    const repos = await this.listRepositories()
+    return repos.filter((r) => r.isCopierTemplate)
+  }
+
+  async getTemplateQuestions(source: string): Promise<CopierQuestionsResponse> {
+    return this.fetch(`/api/copier/questions?source=${encodeURIComponent(source)}`)
+  }
+
+  async createFromTemplate(data: CreateProjectRequest): Promise<CreateProjectResponse> {
+    return this.fetch('/api/copier/create', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
   }
 
   // Unified Search
