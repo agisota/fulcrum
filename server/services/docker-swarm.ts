@@ -568,6 +568,22 @@ export async function generateSwarmComposeFile(
       parsed.networks = networks
     }
 
+    // Ensure 'default' network is defined if any service references it
+    for (const serviceConfig of Object.values(services)) {
+      const svcNetworks = serviceConfig.networks
+      const usesDefault = Array.isArray(svcNetworks)
+        ? svcNetworks.includes('default')
+        : typeof svcNetworks === 'object' && svcNetworks && 'default' in svcNetworks
+      if (usesDefault) {
+        const networks = (parsed.networks || {}) as Record<string, unknown>
+        if (!networks['default']) {
+          networks['default'] = {}
+          parsed.networks = networks
+        }
+        break
+      }
+    }
+
     const swarmContent = stringifyYaml(parsed)
     await writeFile(swarmPath, swarmContent, 'utf-8')
 

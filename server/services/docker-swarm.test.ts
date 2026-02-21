@@ -120,6 +120,37 @@ services:
       expect(parsed.services.api.ports[0].published).toBe(4000)
     })
 
+    test('defines default network when services have no existing networks config', async () => {
+      const composeContent = `
+services:
+  app:
+    image: nginx
+  db:
+    image: postgres
+`
+      await writeFile(join(tempDir, 'docker-compose.yml'), composeContent)
+
+      const result = await generateSwarmComposeFile(
+        tempDir,
+        'docker-compose.yml',
+        'test-project',
+        'dokploy-network',
+        outputDir
+      )
+
+      expect(result.success).toBe(true)
+
+      const swarmContent = await readFile(result.swarmFile, 'utf-8')
+      const parsed = parseYaml(swarmContent)
+
+      // Services with no networks get ['default', externalNetwork]
+      expect(parsed.services.app.networks).toEqual(['default', 'dokploy-network'])
+      // External network defined
+      expect(parsed.networks['dokploy-network']).toEqual({ external: true })
+      // Default network defined (not external, just empty)
+      expect(parsed.networks['default']).toEqual({})
+    })
+
     test('handles mixed env var and literal ports', async () => {
       const composeContent = `
 services:
