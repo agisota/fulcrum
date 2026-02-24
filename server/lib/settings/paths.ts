@@ -147,12 +147,26 @@ export function ensureScratchDir(): void {
   }
 }
 
+// Get assistant working directory (always derived from fulcrumDir)
+export function getAssistantDir(): string {
+  return path.join(getFulcrumDir(), 'assistant')
+}
+
+// Ensure the assistant directory exists
+export function ensureAssistantDir(): void {
+  const assistantDir = getAssistantDir()
+  if (!fs.existsSync(assistantDir)) {
+    fs.mkdirSync(assistantDir, { recursive: true })
+  }
+}
+
 // Initialize all required directories and files
 // Note: ensureSettingsFile is called from core.ts to avoid circular deps
 export function initializeFulcrumDirectories(): void {
   ensureFulcrumDir()
   ensureWorktreesDir()
   ensureScratchDir()
+  ensureAssistantDir()
 }
 
 /**

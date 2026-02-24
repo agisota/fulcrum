@@ -8,7 +8,7 @@ import { db, chatSessions, chatMessages, artifacts, tasks, projects, repositorie
 import type { ChatSession, NewChatSession, ChatMessage, NewChatMessage, Artifact, NewArtifact } from '../db/schema'
 import { getSettings } from '../lib/settings'
 import { getClaudeCodePathForSdk } from '../lib/claude-code-path'
-import { getInstanceContext } from '../lib/settings/paths'
+import { getInstanceContext, getAssistantDir, ensureAssistantDir } from '../lib/settings/paths'
 import { log } from '../lib/logger'
 import type { PageContext, AttachmentData } from '../../shared/types'
 import type { ChannelHistoryMessage } from './channels/message-storage'
@@ -779,10 +779,12 @@ User message: ${userMessage}`
       ephemeral: options.ephemeral ?? false,
     })
 
+    ensureAssistantDir()
     const result = query({
       prompt: fullPrompt,
       options: {
         model: MODEL_MAP[effectiveModelId],
+        cwd: getAssistantDir(),
         resume: resumeSessionId,
         includePartialMessages: true,
         pathToClaudeCodeExecutable: getClaudeCodePathForSdk(),

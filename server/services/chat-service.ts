@@ -1,7 +1,7 @@
 import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { getSettings } from '../lib/settings'
 import { getClaudeCodePathForSdk } from '../lib/claude-code-path'
-import { getInstanceContext } from '../lib/settings/paths'
+import { getInstanceContext, getAssistantDir } from '../lib/settings/paths'
 import { log } from '../lib/logger'
 import { db, tasks, projects, repositories, apps, projectRepositories } from '../db'
 import { eq } from 'drizzle-orm'
@@ -352,6 +352,7 @@ export async function* streamMessage(
       prompt,
       options: {
         model: MODEL_MAP[modelId],
+        cwd: getAssistantDir(),
         resume: session.claudeSessionId, // Resume conversation if exists
         includePartialMessages: true, // Stream partial messages
         pathToClaudeCodeExecutable: getClaudeCodePathForSdk(),
