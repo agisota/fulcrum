@@ -52,6 +52,10 @@ export class TerminalSession {
   // Input queue for data sent before PTY is attached
   private inputQueue: string[] = []
 
+  // Auto-dismiss Claude workspace trust prompt
+  private trustPromptHandled = false
+  private recentOutput = ''
+
   constructor(options: TerminalSessionOptions) {
     this.id = options.id
     this._name = options.name
@@ -236,6 +240,27 @@ export class TerminalSession {
 
     this.pty.onData((data: string) => {
       log.terminal.info('pty.onData fired', { terminalId: this.id, dataLen: data.length })
+
+      // Auto-dismiss Claude workspace trust prompt ("Yes, I trust this folder")
+      if (!this.trustPromptHandled) {
+        // Strip all ANSI escape sequences (CSI, OSC, etc.)
+        // eslint-disable-next-line no-control-regex
+        const stripped = data.replace(/\x1b[\[\]()#?]*[0-9;]*[a-zA-Z~]/g, '').replace(/[\x00-\x09\x0b\x0c\x0e-\x1f]/g, '')
+        this.recentOutput += stripped
+        // Keep only the last 4KB
+        if (this.recentOutput.length > 4096) {
+          this.recentOutput = this.recentOutput.slice(-4096)
+        }
+        if (/Yes,?\s*I\s*trust\s*this\s*folder/.test(this.recentOutput)) {
+          this.trustPromptHandled = true
+          this.recentOutput = ''
+          log.terminal.info('Auto-dismissing workspace trust prompt', { terminalId: this.id })
+          setTimeout(() => {
+            this.pty?.write('\r')
+          }, 200)
+        }
+      }
+
       this.buffer.append(data)
       this.onData(data)
     })
