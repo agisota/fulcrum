@@ -237,7 +237,7 @@ function resolveAction(resources: ApiResource[], resourceName: string, actionNam
  * "true"/"false" → boolean, numeric strings → number, comma-separated → array
  */
 function coerceValue(value: string, isArrayField: boolean): unknown {
-  if (isArrayField || value.includes(',')) {
+  if (isArrayField) {
     return value.split(',').map((v) => v.trim())
   }
   if (value === 'true') return true

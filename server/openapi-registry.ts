@@ -35,7 +35,7 @@ const staticRoutes: StaticCategory[] = [
       { method: 'GET', path: '/api/tasks', operationId: 'tasks-list', description: 'List all tasks', queryParams: 'search, tags, statuses, dueDateStart, dueDateEnd, overdue' },
       { method: 'POST', path: '/api/tasks', operationId: 'tasks-create', description: 'Create a task', bodyFields: 'title, type?, description?, status?, repoPath?, repoName?, baseBranch?, branch?, prefix?, worktreePath?, projectId?, repositoryId?, tags?, dueDate?, timeEstimate?, priority?, recurrenceRule?, recurrenceEndDate?' },
       { method: 'GET', path: '/api/tasks/{id}', operationId: 'tasks-get', description: 'Get task details' },
-      { method: 'PATCH', path: '/api/tasks/{id}', operationId: 'tasks-update', description: 'Update task metadata', bodyFields: 'title?, description?, notes?, prUrl?, dueDate?, timeEstimate?, priority?, tags?, recurrenceRule?, recurrenceEndDate?' },
+      { method: 'PATCH', path: '/api/tasks/{id}', operationId: 'tasks-update', description: 'Update task metadata', bodyFields: 'title?, description?, notes?, prUrl?, dueDate?, timeEstimate?, priority?, tags?, recurrenceRule?, recurrenceEndDate?, pinned?, projectId?, repositoryId?, agent?, aiMode?, agentOptions?, opencodeModel?, baseBranch?, startupScript?, viewState?, type?' },
       { method: 'DELETE', path: '/api/tasks/{id}', operationId: 'tasks-delete', description: 'Delete a task', queryParams: 'deleteLinkedWorktree' },
       { method: 'PATCH', path: '/api/tasks/{id}/status', operationId: 'tasks-move', description: 'Move task to new status', bodyFields: 'status, position?' },
       { method: 'DELETE', path: '/api/tasks/bulk', operationId: 'tasks-bulk-delete', description: 'Bulk delete tasks', bodyFields: 'ids, deleteLinkedWorktrees?' },

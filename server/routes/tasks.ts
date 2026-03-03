@@ -572,6 +572,46 @@ app.post('/:id/initialize-scratch', async (c) => {
 })
 
 // PATCH /api/tasks/:id - Update task
+// Build update data from PATCH body using a field→transform map
+const TASK_PATCH_FIELDS: Record<string, (v: unknown) => unknown> = {
+  title: (v) => v,
+  description: (v) => v,
+  notes: (v) => v,
+  prUrl: (v) => v,
+  dueDate: (v) => v,
+  priority: (v) => v,
+  pinned: (v) => v,
+  recurrenceRule: (v) => v,
+  recurrenceEndDate: (v) => v,
+  projectId: (v) => v,
+  repositoryId: (v) => v,
+  agent: (v) => v,
+  aiMode: (v) => v,
+  opencodeModel: (v) => v,
+  startupScript: (v) => v,
+  type: (v) => v,
+  startedAt: (v) => v,
+  repoPath: (v) => v,
+  repoName: (v) => v,
+  baseBranch: (v) => v,
+  branch: (v) => v,
+  prefix: (v) => v,
+  worktreePath: (v) => v,
+  timeEstimate: (v) => v != null ? (Number.isInteger(Number(v)) && Number(v) >= 1 ? Number(v) : null) : null,
+  viewState: (v) => v ? JSON.stringify(v) : null,
+  agentOptions: (v) => v ? JSON.stringify(v) : null,
+}
+
+function buildTaskUpdateData(body: Record<string, unknown>, now: string): Record<string, unknown> {
+  const updateData: Record<string, unknown> = { updatedAt: now }
+  for (const [field, transform] of Object.entries(TASK_PATCH_FIELDS)) {
+    if (body[field] !== undefined) {
+      updateData[field] = transform(body[field])
+    }
+  }
+  return updateData
+}
+
 app.patch('/:id', async (c) => {
   const id = c.req.param('id')
 
@@ -589,19 +629,14 @@ app.patch('/:id', async (c) => {
       await updateTaskStatus(id, body.status)
     }
 
-    // Handle other updates (excluding status to avoid double-update)
-    const { status: _status, ...otherFields } = body
-    const updates: Record<string, unknown> = { ...otherFields, updatedAt: now }
-    if (body.viewState !== undefined) {
-      updates.viewState = body.viewState ? JSON.stringify(body.viewState) : null
-    }
+    // Build whitelisted update data (excludes status, tags, and unknown fields)
+    const updates = buildTaskUpdateData(body as Record<string, unknown>, now)
 
-    // Handle tags via join table (remove tags field from updates if present)
+    // Handle tags via join table
     const tagsToUpdate = (body as { tags?: string[] }).tags
-    delete updates.tags // Don't try to update non-existent column
 
-    // Only do additional db update if there are other fields to update
-    if (Object.keys(otherFields).length > 0 || body.viewState !== undefined) {
+    // Only do additional db update if there are fields beyond updatedAt
+    if (Object.keys(updates).length > 1) {
       db.update(tasks)
         .set(updates)
         .where(eq(tasks.id, id))

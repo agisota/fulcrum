@@ -335,6 +335,25 @@ describe('Tasks Routes', () => {
       expect(body.aiMode).toBe('plan')
       expect(body.agentOptions).toEqual({ model: 'gpt-4', temperature: '0.7' })
     })
+
+    test('creates a task with description and type', async () => {
+      const { post } = createTestApp()
+
+      const res = await post('/api/tasks', {
+        title: 'Task with Description',
+        description: 'some desc with, commas in it',
+        type: 'worktree',
+        repoPath: repo.path,
+        repoName: 'test-repo',
+        baseBranch: repo.defaultBranch,
+      })
+      const body = await res.json()
+
+      expect(res.status).toBe(201)
+      expect(body.title).toBe('Task with Description')
+      expect(body.description).toBe('some desc with, commas in it')
+      expect(body.type).toBe('worktree')
+    })
   })
 
   describe('GET /api/tasks/:id', () => {
@@ -464,6 +483,87 @@ describe('Tasks Routes', () => {
       })
 
       expect(res.status).toBe(404)
+    })
+
+    test('updates task description', async () => {
+      const now = new Date().toISOString()
+      db.insert(tasks)
+        .values({
+          id: 'update-desc-1',
+          title: 'Desc Test',
+          status: 'IN_PROGRESS',
+          position: 0,
+          repoPath: repo.path,
+          repoName: 'test-repo',
+          baseBranch: repo.defaultBranch,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run()
+
+      const { patch } = createTestApp()
+      const res = await patch('/api/tasks/update-desc-1', {
+        description: 'updated description',
+      })
+      const body = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(body.description).toBe('updated description')
+    })
+
+    test('ignores unknown fields in PATCH body', async () => {
+      const now = new Date().toISOString()
+      db.insert(tasks)
+        .values({
+          id: 'unknown-fields-1',
+          title: 'Unknown Fields Test',
+          status: 'IN_PROGRESS',
+          position: 0,
+          repoPath: repo.path,
+          repoName: 'test-repo',
+          baseBranch: repo.defaultBranch,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run()
+
+      const { patch } = createTestApp()
+      const res = await patch('/api/tasks/unknown-fields-1', {
+        title: 'Updated',
+        blockedByTaskIds: ['some-id'],
+        links: [{ url: 'https://example.com' }],
+        nonExistentField: 'should be ignored',
+      })
+      const body = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(body.title).toBe('Updated')
+    })
+
+    test('serializes agentOptions as JSON', async () => {
+      const now = new Date().toISOString()
+      db.insert(tasks)
+        .values({
+          id: 'agent-opts-1',
+          title: 'Agent Options Test',
+          status: 'IN_PROGRESS',
+          position: 0,
+          repoPath: repo.path,
+          repoName: 'test-repo',
+          baseBranch: repo.defaultBranch,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run()
+
+      const { patch } = createTestApp()
+      const res = await patch('/api/tasks/agent-opts-1', {
+        agentOptions: { verbose: true, model: 'opus' },
+      })
+
+      expect(res.status).toBe(200)
+      const row = db.select().from(tasks).where(eq(tasks.id, 'agent-opts-1')).get()
+      expect(row?.agentOptions).toBe('{"verbose":true,"model":"opus"}')
     })
   })
 
